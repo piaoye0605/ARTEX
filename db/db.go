@@ -4,12 +4,15 @@ package db
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
 	_ "embed"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/Autumn-27/artex/config"
@@ -19,6 +22,15 @@ import (
 
 //go:embed schema.sql
 var schemaSQL string
+
+// schemaChecksum 返回 schema.sql 的 sha256 指纹（每进程只算一次）。它是
+// app_schema_state 里记录的"最近一次成功应用的 schema"标记：指纹一致就跳过
+// 全量 DDL。schema.sql 是嵌入常量，同一二进制的所有进程指纹一致；改了
+// schema.sql 指纹即变，下一次 Open 会重新应用——无需手工维护版本号。
+var schemaChecksum = sync.OnceValue(func() string {
+	sum := sha256.Sum256([]byte(schemaSQL))
+	return hex.EncodeToString(sum[:])
+})
 
 const schemaMigrationLockKey int64 = 7337741001
 
@@ -41,6 +53,25 @@ type schemaExecer interface {
 func isPostgresDeadlock(err error) bool {
 	var pgErr *pgconn.PgError
 	return errors.As(err, &pgErr) && pgErr.Code == "40P01"
+}
+
+// schemaUpToDate reports whether app_schema_state records the exact checksum of
+// the embedded schema.sql, i.e. the DDL can be skipped for this process. A
+// missing table or row (fresh database, legacy install) means "not up to date".
+func schemaUpToDate(ctx context.Context, conn *sql.Conn) bool {
+	var stored string
+	err := conn.QueryRowContext(ctx, `SELECT checksum FROM app_schema_state WHERE id`).Scan(&stored)
+	return err == nil && stored == schemaChecksum()
+}
+
+// stampSchemaChecksum records the just-applied schema.sql checksum so the next
+// Open takes the fast path. Called under the schema migration advisory lock.
+func stampSchemaChecksum(ctx context.Context, conn *sql.Conn) error {
+	_, err := conn.ExecContext(ctx, `
+INSERT INTO app_schema_state(id, checksum) VALUES (true, $1)
+ON CONFLICT (id) DO UPDATE SET checksum = EXCLUDED.checksum, applied_at = now()`,
+		schemaChecksum())
+	return err
 }
 
 func applySchemaWithRetry(ctx context.Context, execer schemaExecer, sleep func(time.Duration)) error {
@@ -157,8 +188,20 @@ func Open(dsn string) (*DB, error) {
 	// Keep the dedicated lock connection checked out until both DDL and seeding
 	// finish so concurrent application instances cannot initialize out of order.
 	err = withSchemaMigrationLock(context.Background(), sqlDB, func(conn *sql.Conn) error {
-		if err := applySchemaWithRetry(context.Background(), conn, time.Sleep); err != nil {
-			return fmt.Errorf("apply schema: %w", err)
+		// 快路径：schema 指纹与最近一次成功应用的一致 → 跳过全量 DDL。
+		// DDL 会拿 AccessExclusiveLock（CREATE OR REPLACE TRIGGER / ALTER 等），
+		// 与任何持有行锁的在飞业务事务互卡即死锁（实测 40P01：CreateTask 持
+		// explorations 行锁等 companies 共享锁，DDL 持 companies 排他锁等
+		// explorations）。每次 Open 都跑 DDL 时这个窗口每次启动都存在；指纹
+		// 一致就跳过后，DDL 只在首次建库/升级时执行一次，而所有 Open 都要先
+		// 过同一把 advisory lock，时序上与业务事务不再重叠。
+		if !schemaUpToDate(context.Background(), conn) {
+			if err := applySchemaWithRetry(context.Background(), conn, time.Sleep); err != nil {
+				return fmt.Errorf("apply schema: %w", err)
+			}
+			if err := stampSchemaChecksum(context.Background(), conn); err != nil {
+				return fmt.Errorf("stamp schema checksum: %w", err)
+			}
 		}
 		if err := d.seedBuiltins(); err != nil {
 			return fmt.Errorf("seed builtins: %w", err)

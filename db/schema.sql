@@ -2,8 +2,20 @@
 -- 幂等：可重复执行（IF NOT EXISTS / OR REPLACE / DROP TRIGGER IF EXISTS）。
 
 -- =====================================================================
--- 0. 通用：updated_at 触发器
+-- 0. 通用：updated_at 触发器 + schema 应用指纹
 -- =====================================================================
+-- app_schema_state 记录最近一次成功应用的 schema.sql sha256 指纹：db.Open
+-- 据此跳过全量 DDL（指纹一致 = schema 已是当前二进制的版本）。DDL 拿
+-- AccessExclusiveLock，与任何持有行锁的在飞业务事务互卡即 40P01 死锁，
+-- 因此 DDL 只应在首次建库/升级时执行一次。表本身在快路径判定之前就要
+-- 存在，所以放在脚本最前面；全新库上指纹查询失败 → 走全量 DDL → 建出
+-- 本表并盖章。
+CREATE TABLE IF NOT EXISTS app_schema_state (
+    id         boolean PRIMARY KEY DEFAULT true CHECK (id),
+    checksum   text        NOT NULL,
+    applied_at timestamptz NOT NULL DEFAULT now()
+);
+
 CREATE OR REPLACE FUNCTION set_updated_at() RETURNS trigger AS $$
 BEGIN NEW.updated_at = now(); RETURN NEW; END;
 $$ LANGUAGE plpgsql;
