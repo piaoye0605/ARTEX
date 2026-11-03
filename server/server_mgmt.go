@@ -1531,9 +1531,11 @@ func skillRelPath(file string) (string, string) {
 		return "", "invalid path: must be relative with no empty segments"
 	}
 	// 4. Normalize and final safety re-check after Clean.
-	//    filepath.Clean removes redundant separators and resolves single dots.
-	clean := filepath.Clean(file)
-	if clean == "." || filepath.IsAbs(clean) || strings.HasPrefix(clean, "..") {
+	//    虚拟路径永远用 "/" 分隔：filepath.Clean 在 Windows 上会产出反斜杠，
+	//    回传时会被上方字符白名单拒绝（子目录文件从此打不开）。path.Clean 保持 "/"；
+	//    落盘时 filepath.Join 会转成本地分隔符（Windows 上正斜杠同样合法）。
+	clean := path.Clean(file)
+	if clean == "." || path.IsAbs(clean) || strings.HasPrefix(clean, "..") {
 		return "", "invalid path"
 	}
 	return clean, ""
@@ -1546,14 +1548,17 @@ func skillRelPath(file string) (string, string) {
 // them from files and render empty folders in the tree.
 func walkSkillFiles(root string) ([]string, error) {
 	var entries []string
-	err := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
+	err := filepath.WalkDir(root, func(p string, d os.DirEntry, err error) error {
 		if err != nil {
 			return nil // skip unreadable entries
 		}
-		rel, relErr := filepath.Rel(root, path)
+		rel, relErr := filepath.Rel(root, p)
 		if relErr != nil || rel == "." {
 			return nil
 		}
+		// 对外契约是 "/" 分隔的虚拟路径：Windows 上 filepath.Rel 产出反斜杠，
+		// 前端回传后会被 skillRelPath 的字符白名单拒绝（400 invalid path）。
+		rel = filepath.ToSlash(rel)
 		if d.IsDir() {
 			entries = append(entries, rel+"/")
 		} else {

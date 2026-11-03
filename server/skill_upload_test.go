@@ -234,6 +234,45 @@ func TestUploadSkillRejectsTraversal(t *testing.T) {
 	}
 }
 
+// walkSkillFiles 的对外契约是 "/" 分隔的虚拟路径。Windows 上 filepath.Rel 产出
+// 反斜杠，前端回传后会被 skillRelPath 的字符白名单拒绝——子目录文件从此打不开。
+func TestWalkSkillFilesUsesForwardSlashes(t *testing.T) {
+	root := t.TempDir()
+	for _, rel := range []string{"SKILL.md", "scripts/run.py", "references/a b.txt", "assets/图片.png"} {
+		full := filepath.Join(root, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(full, []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got, err := walkSkillFiles(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]bool{
+		"SKILL.md":           true,
+		"scripts/":           true,
+		"scripts/run.py":     true,
+		"references/":        true,
+		"references/a b.txt": true,
+		"assets/":            true,
+		"assets/图片.png":      true,
+	}
+	if len(got) != len(want) {
+		t.Fatalf("walkSkillFiles 返回 %d 项, want %d: %q", len(got), len(want), got)
+	}
+	for _, e := range got {
+		if !want[e] {
+			t.Errorf("walkSkillFiles 返回了意外项 %q", e)
+		}
+		if strings.ContainsRune(e, '\\') {
+			t.Errorf("walkSkillFiles 条目含反斜杠（应为 \"/\" 分隔的虚拟路径）: %q", e)
+		}
+	}
+}
+
 func TestSkillNameFromFrontmatterQuoted(t *testing.T) {
 	got := skillNameFromFrontmatter([]byte("---\nname: \"中文技能\"\ndescription: x\n---\n"))
 	if got != "中文技能" {
