@@ -1,7 +1,6 @@
 package server
 
 import (
-	"context"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -9,14 +8,7 @@ import (
 )
 
 func TestWorkerControlRoutes(t *testing.T) {
-	m, err := NewManager(t.TempDir(), "")
-	if err != nil {
-		t.Skipf("postgres unavailable (%v) - skipping", err)
-	}
-	defer m.Close()
-
-	td := t.TempDir()
-	s := New(context.Background(), m, td, td, td)
+	_, s := newTestStack(t)
 	h := s.Handler()
 	token, err := signJWT(s.jwtKey)
 	if err != nil {

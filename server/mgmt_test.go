@@ -2,7 +2,6 @@ package server
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -11,15 +10,7 @@ import (
 
 // TestMgmtAPI exercises the PostgreSQL-backed management API through the real mux.
 func TestMgmtAPI(t *testing.T) {
-	m, err := NewManager(t.TempDir(), "")
-	if err != nil {
-		t.Skipf("database unavailable (%v) — skipping management API test", err)
-	}
-	if m.pg == nil {
-		t.Skip("postgres unavailable — skipping management API test")
-	}
-	td := t.TempDir()
-	s := New(context.Background(), m, td, td, td)
+	m, s := newTestStack(t)
 	h := s.Handler()
 	tok, err := signJWT(s.jwtKey)
 	if err != nil {

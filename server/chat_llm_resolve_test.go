@@ -1,7 +1,6 @@
 package server
 
 import (
-	"context"
 	"strings"
 	"testing"
 
@@ -12,13 +11,7 @@ import (
 // to the actual configuration state: nothing configured vs. configured-but-not-
 // activated must read differently so the user knows what to do.
 func TestChatUnavailableReasonDistinguishesStates(t *testing.T) {
-	m, err := NewManager(t.TempDir(), "")
-	if err != nil {
-		t.Skipf("postgres unavailable (%v) — skipping", err)
-	}
-	defer m.Close()
-	td := t.TempDir()
-	s := New(context.Background(), m, td, td, td)
+	m, s := newTestStack(t)
 
 	// Start from a clean profile table; other tests in the shared DB may have left rows.
 	existing, _ := m.pg.ListProfiles()
@@ -62,13 +55,7 @@ func TestChatUnavailableReasonDistinguishesStates(t *testing.T) {
 // agent even when NO global profile is active, so the send precheck stops
 // rejecting it with "LLM 未配置".
 func TestResolveChatAgentHonoursConversationProfile(t *testing.T) {
-	m, err := NewManager(t.TempDir(), "")
-	if err != nil {
-		t.Skipf("postgres unavailable (%v) — skipping", err)
-	}
-	defer m.Close()
-	td := t.TempDir()
-	s := New(context.Background(), m, td, td, td)
+	m, s := newTestStack(t)
 
 	// Force the global fallback to nil so a non-nil result can ONLY come from the
 	// conversation's own profile — this is exactly the situation the user hit
