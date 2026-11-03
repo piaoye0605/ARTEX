@@ -58,3 +58,6 @@ Thumbs.db
 /bench/
 /Dockerfile.bench
 /Dockerfile.bench.v2
+# local test logs
+.audit-test*.log
+.split-test.log

@@ -1,0 +1,52 @@
+name: nightly-regression
+
+on:
+  schedule:
+    - cron: "0 18 * * *" # UTC 18:00 = 北京时间 02:00
+  workflow_dispatch: {} # 支持手动触发（首跑验证用）
+
+jobs:
+  go:
+    name: Go 闸门（vet + 全量测试）
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      ARTEX_PG_DSN: postgres://postgres:postgres@127.0.0.1:5432/postgres?sslmode=disable
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26"
+      - name: vet
+        run: go vet ./...
+      - name: test
+        run: go test ./... -count=1 -coverprofile=cover.out
+      - name: coverage
+        if: always() && hashFiles('cover.out') != ''
+        run: go tool cover -func=cover.out | tail -1
+
+  web:
+    name: 前端闸门（install + build）
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+      - run: npm run build
+      # biome check 暂不进 CI：当前 134 errors（P4 第 1 步清完 lint 债后再加回）
