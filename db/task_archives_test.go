@@ -129,9 +129,7 @@ func TestTaskArchiveDatabaseRoundTrip(t *testing.T) {
 	if err := d.EnsureLLMRecordsTable(); err != nil {
 		t.Fatal(err)
 	}
-	if err := d.EnsureLLMUsageTable(); err != nil {
-		t.Fatal(err)
-	}
+	// llm_usage 建表已归 schema.sql，无需显式 Ensure。
 	task, err := d.CreateTaskWithOptions("archive database roundtrip", "restore exact graph", TaskCreateOptions{Name: "cold task"})
 	if err != nil {
 		t.Fatal(err)

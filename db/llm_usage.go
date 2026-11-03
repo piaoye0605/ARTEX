@@ -26,45 +26,9 @@ type LLMUsage struct {
 	Status        string `json:"status"` // ok | error
 }
 
-const llmUsageSchema = `
-CREATE TABLE IF NOT EXISTS llm_usage (
-    id             BIGSERIAL PRIMARY KEY,
-    ts             TIMESTAMPTZ NOT NULL DEFAULT now(),
-    task_id        TEXT,
-    exploration_id BIGINT,
-    worker         TEXT,
-    model          TEXT,
-    profile_name   TEXT,
-    latency_ms     INTEGER,
-    input_tokens   INTEGER NOT NULL DEFAULT 0,
-    output_tokens  INTEGER NOT NULL DEFAULT 0,
-    cache_read     INTEGER NOT NULL DEFAULT 0,
-    cache_write    INTEGER NOT NULL DEFAULT 0,
-    status         TEXT
-);
-CREATE INDEX IF NOT EXISTS idx_llm_usage_task  ON llm_usage(task_id);
-CREATE INDEX IF NOT EXISTS idx_llm_usage_model ON llm_usage(task_id, model);
-CREATE INDEX IF NOT EXISTS idx_llm_usage_exp   ON llm_usage(exploration_id);
-`
-
-// EnsureLLMUsageTable creates the llm_usage metering table if it does not exist.
-func (d *DB) EnsureLLMUsageTable() error {
-	tx, err := d.Begin()
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback() //nolint:errcheck
-	if err := coordinateWithSchemaMigration(tx); err != nil {
-		return err
-	}
-	if _, err := tx.Exec(llmUsageSchema); err != nil {
-		return err
-	}
-	return tx.Commit()
-}
-
 // InsertLLMUsage appends one metering row. Best-effort: callers log and continue on
 // error (a lost metering row must never break the LLM call).
+// 建表归 schema.sql（§G 账本段）：db.Open 的 schema 引导保证其存在，无需运行时补建。
 func (d *DB) InsertLLMUsage(u *LLMUsage) error {
 	var expID any
 	if u.ExplorationID > 0 {

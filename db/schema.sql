@@ -941,6 +941,58 @@ CREATE TABLE IF NOT EXISTS tool_usage (
 CREATE INDEX IF NOT EXISTS idx_tool_usage_tool ON tool_usage(tool_key, ts DESC);
 CREATE INDEX IF NOT EXISTS idx_tool_usage_task ON tool_usage(task_id);
 
+-- LLM 用量账本（见 db/llm_usage.go）。一次 Complete/Stream 一行，只记计量不记正文。
+-- 刻意不设外键（同上）。此前只在 server 启动时补建、游离于本文件之外，导致仅经
+-- db.Open 的消费者（CLI、测试）在全新库上 42P01——已收编入 schema 引导。
+CREATE TABLE IF NOT EXISTS llm_usage (
+    id             BIGSERIAL PRIMARY KEY,
+    ts             TIMESTAMPTZ NOT NULL DEFAULT now(),
+    task_id        TEXT,
+    exploration_id BIGINT,
+    worker         TEXT,
+    model          TEXT,
+    profile_name   TEXT,
+    latency_ms     INTEGER,
+    input_tokens   INTEGER NOT NULL DEFAULT 0,
+    output_tokens  INTEGER NOT NULL DEFAULT 0,
+    cache_read     INTEGER NOT NULL DEFAULT 0,
+    cache_write    INTEGER NOT NULL DEFAULT 0,
+    status         TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_llm_usage_task  ON llm_usage(task_id);
+CREATE INDEX IF NOT EXISTS idx_llm_usage_model ON llm_usage(task_id, model);
+CREATE INDEX IF NOT EXISTS idx_llm_usage_exp   ON llm_usage(exploration_id);
+
+-- LLM 调用记录（见 db/commands.go）。按 session 存请求/响应正文，供回放与审计。
+-- 同样不设外键；ALTER 段为存量库补列（首次建表时冗余但幂等）。
+CREATE TABLE IF NOT EXISTS llm_records (
+    id            BIGSERIAL PRIMARY KEY,
+    ts            TIMESTAMPTZ DEFAULT now(),
+    model         TEXT,
+    profile_name  TEXT,
+    session_id    TEXT,
+    task_id       TEXT,
+    worker        TEXT,
+    latency_ms    INTEGER,
+    input_tokens  INTEGER,
+    output_tokens INTEGER,
+    cache_read    INTEGER,
+    cache_write   INTEGER,
+    status        TEXT,
+    error         TEXT,
+    request_body  TEXT,
+    response_body TEXT,
+    raw_request   TEXT,
+    raw_response  TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_llm_records_ts ON llm_records(ts);
+CREATE INDEX IF NOT EXISTS idx_llm_records_session ON llm_records(session_id);
+ALTER TABLE llm_records ADD COLUMN IF NOT EXISTS task_id TEXT;
+ALTER TABLE llm_records ADD COLUMN IF NOT EXISTS worker TEXT;
+ALTER TABLE llm_records ADD COLUMN IF NOT EXISTS profile_name TEXT;
+ALTER TABLE llm_records ADD COLUMN IF NOT EXISTS raw_request TEXT;
+ALTER TABLE llm_records ADD COLUMN IF NOT EXISTS raw_response TEXT;
+
 -- =====================================================================
 -- H. 内置工具目录
 -- =====================================================================

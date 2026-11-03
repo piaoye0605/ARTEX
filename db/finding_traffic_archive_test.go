@@ -20,10 +20,8 @@ func TestFindingTrafficLegacyArchiveDefaults(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer d.Close()
+	// llm_records / llm_usage 的建表已归 schema.sql（Open 的 schema 引导），无需显式 Ensure。
 	if err = d.EnsureLLMRecordsTable(); err != nil {
-		t.Fatal(err)
-	}
-	if err = d.EnsureLLMUsageTable(); err != nil {
 		t.Fatal(err)
 	}
 	for _, version := range []int{1, 2} {

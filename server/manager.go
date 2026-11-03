@@ -367,12 +367,8 @@ func NewManager(dir, proxyAddr string) (*Manager, error) {
 		pg.Close()
 		return nil, fmt.Errorf("recover finding retests: %w", err)
 	}
-	if err := pg.EnsureLLMRecordsTable(); err != nil {
-		log.Printf("[llmrec] create table: %v", err)
-	}
-	if err := pg.EnsureLLMUsageTable(); err != nil {
-		log.Printf("[llmusage] create table: %v", err)
-	}
+	// llm_usage / llm_records 的建表已收编进 db/schema.sql（db.Open 的 schema 引导），
+	// 启动时不再需要运行时补建；EnsureLLMRecordsTable 保留给测试构造旧库形态用。
 	m := &Manager{dir: dir, pg: pg, assets: pg.Assets(), tasks: map[string]*Task{}, interceptor: intercept.New(pg)}
 	if proxyAddr != "" {
 		tr, err := traffic.Open(filepath.Join(dir, "traffic"), proxyAddr)

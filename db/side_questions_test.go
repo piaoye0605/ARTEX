@@ -328,9 +328,7 @@ func TestSideTaskArchiveVersions(t *testing.T) {
 			if err := d.EnsureLLMRecordsTable(); err != nil {
 				t.Fatal(err)
 			}
-			if err := d.EnsureLLMUsageTable(); err != nil {
-				t.Fatal(err)
-			}
+			// llm_usage 建表已归 schema.sql，无需显式 Ensure。
 			task, err := d.CreateTask("btw archive", "restore context", nil, 0, 0)
 			if err != nil {
 				t.Fatal(err)
