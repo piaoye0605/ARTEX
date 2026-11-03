@@ -140,6 +140,13 @@ type triggeredRun struct {
 	mergeable bool   // true for finding/goal event triggers (merge by taskID)
 }
 
+// WaitIdle waits for the engine's in-flight task operations to drain (process
+// shutdown path — call between httpSrv.Shutdown and Manager.Close). See
+// Engine.WaitIdle for semantics; once called the engine rejects new operations.
+func (s *Server) WaitIdle(ctx context.Context) error {
+	return s.engine.WaitIdle(ctx)
+}
+
 func New(ctx context.Context, m *Manager, skillDir string, dataDir string, keyDir string) *Server {
 	key, err := loadOrCreateJWTKey(keyDir, dataDir)
 	if err != nil {

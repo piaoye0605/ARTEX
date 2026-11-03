@@ -143,6 +143,11 @@ type Engine struct {
 	inflight     sync.Map // taskID -> *int64, 在跑的 planner.Plan + worker.Execute 计数(用于 drain)
 	coordStarted sync.Map // taskID -> bool, deadline 协调器是否已启动(Run/reload 去重)
 
+	// draining 是进程关闭期的单向闸：置位后 beginTaskOperation 拒绝接新任务操作，
+	// 已接入的照常跑完（见 WaitIdle）。单向不清零——WaitIdle 返回后 DB 随即关闭，
+	// 清零反而会打开"新写入撞上已关闭 DB"的窗口。
+	draining atomic.Bool
+
 	// resolve returns a task's dedicated planner/worker (wired by the server as the
 	// authoritative task-router). nil,nil means this task is deliberately unavailable
 	// (for example an exhausted failover chain) — there is no global-pair fallback.

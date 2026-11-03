@@ -99,7 +99,8 @@ func run() int {
 	if err != nil {
 		log.Fatalf("open stores: %v", err)
 	}
-	defer mgr.Close()
+	// 关闭顺序见 main 末尾：httpSrv.Shutdown → srv.WaitIdle → mgr.Close（显式调用，
+	// 不用 defer，保证排空发生在 DB 关闭之前）。
 
 	// Surviving this long means a freshly swapped-in build actually works, so drop
 	// the upgrade marker and stop counting attempts. Until it fires, every boot
@@ -141,6 +142,18 @@ func run() int {
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	_ = httpSrv.Shutdown(shutdownCtx)
+
+	// 排空引擎在飞写入后再关 DB。httpSrv.Shutdown 只保证不再接新请求；planner/worker
+	// 被取消后的终态 / activity 落库还在路上。不排空就会出现
+	// "[activity] task N 写入失败 ... sql: database is closed" → 丢弃活动记录（断档）。
+	drainCtx, drainCancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer drainCancel()
+	if err := srv.WaitIdle(drainCtx); err != nil {
+		log.Printf("[shutdown] %v", err)
+	}
+	if err := mgr.Close(); err != nil {
+		log.Printf("[shutdown] close stores: %v", err)
+	}
 	return code
 }
 

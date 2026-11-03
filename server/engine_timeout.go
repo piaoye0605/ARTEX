@@ -45,16 +45,49 @@ func (e *Engine) inflightCounter(taskID string) *int64 {
 }
 
 // beginTaskOperation atomically registers a task-owned operation unless deletion
-// has already installed its barrier. The delete handler can therefore wait for
-// inflight==0 without a check-then-start race recreating files after cleanup.
+// has already installed its barrier (or the process is draining for shutdown).
+// The delete handler can therefore wait for inflight==0 without a check-then-start
+// race recreating files after cleanup.
 func (e *Engine) beginTaskOperation(taskID string) bool {
 	e.deleteMu.RLock()
 	defer e.deleteMu.RUnlock()
+	if e.draining.Load() {
+		return false // 进程关闭期：拒绝新任务操作，已接入的照常跑完（见 WaitIdle）
+	}
 	if e.IsDeleting(taskID) {
 		return false
 	}
 	atomic.AddInt64(e.inflightCounter(taskID), 1)
 	return true
+}
+
+// WaitIdle blocks until every task-owned in-flight operation (planner.Plan /
+// worker.Execute / API 写操作，均由 beginTaskOperation 计数) has settled, or ctx
+// expires. Called on process shutdown between httpSrv.Shutdown and DB close so the
+// deferred activity/status writes land in a live database instead of failing with
+// "sql: database is closed" and being dropped (activity 断档). Once called, the
+// engine rejects NEW task operations (one-way latch); already-admitted ones run
+// to completion. Returns an error naming the leftover count on timeout.
+func (e *Engine) WaitIdle(ctx context.Context) error {
+	e.draining.Store(true)
+	const poll = 50 * time.Millisecond
+	ticker := time.NewTicker(poll)
+	defer ticker.Stop()
+	for {
+		total := int64(0)
+		e.inflight.Range(func(_, v any) bool {
+			total += atomic.LoadInt64(v.(*int64))
+			return true
+		})
+		if total <= 0 {
+			return nil
+		}
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("等待在飞写入超时，剩余 %d 个在飞操作（DB 关闭后将被丢弃）", total)
+		case <-ticker.C:
+		}
+	}
 }
 
 func (e *Engine) decInflight(taskID string) { atomic.AddInt64(e.inflightCounter(taskID), -1) }
