@@ -331,17 +331,27 @@ func TestCompanyScopeAttribution(t *testing.T) {
 		d.Close()
 	})
 
-	uniq := startMax + 1
+	// uniq 不能用资产水位：公司与 scope 跨运行持久化、资产却被清理，水位回退后
+	// 域名/子网会撞上历史公司的范围，被回填归属（实测 pre 资产 got company 208）。
+	// 改用 UnixNano 保证每轮不重复；测试结束连同本轮创建的公司一并清理。
+	uniq := time.Now().UnixNano()
 	root := fmt.Sprintf("scopetest%d.com", uniq)
 	sub := "api." + root
-	ipIn := "198.51.100.9"
-	ipOut := "203.0.113.9"
+	// 测试网段不能写死：共享 dev 库上资产归属是"首归属者保留"，且 AddScope 的
+	// 回填会把范围内所有未归属资产划给本轮公司——多轮运行后 198.51.100.0/24 被
+	// 历史公司瓜分殆尽（实测 company_id=27, want 102）。改用 RFC 2544 基准测试
+	// 保留段 198.18.0.0/15：产品与其它测试都不会触碰，按资产水位推导每轮唯一的
+	// /24 子网与 IP，历史污染无法再命中。
+	scopeNet := fmt.Sprintf("198.18.%d.0/24", int(uniq)%253)
+	ipIn := fmt.Sprintf("198.18.%d.%d", int(uniq)%253, int(uniq)/253%253+2)
+	ipOut := fmt.Sprintf("198.19.254.%d", int(uniq)%253+2)
 	outDomain := fmt.Sprintf("other%d.net", uniq)
 
 	cid, _, err := cs.UpsertCompany(fmt.Sprintf("ScopeCo %d", uniq), "")
 	if err != nil {
 		t.Fatalf("UpsertCompany: %v", err)
 	}
+	t.Cleanup(func() { _ = cs.DeleteCompany(cid) })
 
 	// a pre-existing asset (inserted BEFORE any scope) — must be back-filled.
 	preID, err := as.UpsertSubdomain(UpsertSubdomainReq{Domain: sub})
@@ -354,7 +364,7 @@ func TestCompanyScopeAttribution(t *testing.T) {
 		t.Fatalf("pre-scope asset should be unattributed, got %v", *preCompanyID)
 	}
 
-	cs.AddScope(cid, []string{root, "198.51.100.0/24"}, "unit test")
+	cs.AddScope(cid, []string{root, scopeNet}, "unit test")
 
 	mustCid := func(id int64, want int64, label string) {
 		var cID *int64
