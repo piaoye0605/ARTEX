@@ -64,6 +64,9 @@ type agentDetailDTO struct {
 
 func TestAgentCreateReadUpdateDeleteRoutes(t *testing.T) {
 	m, s := newTestStack(t)
+	// The agent detail carries the LLM profile candidate list, which is empty on
+	// a virgin database — seed one so the dropdown assertion is environment-free.
+	newTestProfile(t, m, fmt.Sprintf("agent-probe-%d", time.Now().UnixNano()))
 	key := agentProbeKey("crud")
 	t.Cleanup(func() {
 		_ = m.pg.DeleteAgent(key)
@@ -140,6 +143,8 @@ func TestAgentCreateReadUpdateDeleteRoutes(t *testing.T) {
 	if len(detail.Visibility.MCP) != 0 {
 		t.Fatalf("fresh agent already sees MCP servers: %+v", detail.Visibility.MCP)
 	}
+	// The candidate dropdown lists every profile in the library, so it is empty
+	// only on a virgin database. Seed one so the assertion is environment-free.
 	if len(detail.LLMProfiles) == 0 {
 		t.Fatal("llm_profiles candidate list is empty; the profile dropdown would render blank")
 	}

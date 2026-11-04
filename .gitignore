@@ -61,3 +61,6 @@ Thumbs.db
 # local test logs
 .audit-test*.log
 .split-test.log
+
+# local postgres data dir used for contract tests
+/.pgtest/
