@@ -78,7 +78,7 @@ func TestFindingsMarkdownSummaryAndDetail(t *testing.T) {
 		"- **发现总数**：2 个\n\n" +
 		"## 摘要\n\n" +
 		"| 严重等级 | 数量 |\n| --- | --- |\n" +
-		"| 严重 | 0 |\n| 高危 | 1 |\n| 中危 | 0 |\n| 低危 | 1 |\n\n" +
+		"| 严重 | 0 |\n| 高危 | 1 |\n| 中危 | 0 |\n| 低危 | 1 |\n| 信息 | 0 |\n\n" +
 		"## 漏洞明细\n\n"
 	if !strings.HasPrefix(out, head) {
 		t.Fatalf("header mismatch:\n--- got ---\n%q\n--- want ---\n%q", out, head)
@@ -226,11 +226,11 @@ func TestFindingFilenameSanitises(t *testing.T) {
 		in    db.DBFinding
 		exact string
 	}{
-		// Note: `#` is not in the allowed class, so the rendered `#id` suffix becomes
-		// `_id` in the filename (the doc comment above FindingFilename is stale).
-		{name: "plain", in: db.DBFinding{ID: 3, Severity: "high", Name: "a b"}, exact: "high_a_b__3.md"},
-		{name: "path traversal", in: db.DBFinding{ID: 4, Severity: "critical", Name: "../../etc/passwd"}, exact: "critical_.._.._etc_passwd__4.md"},
-		{name: "defaults", in: db.DBFinding{ID: 0}, exact: "info_未分类__0.md"},
+		// The `#id` suffix survives the sanitiser (it is on the allow-list), which is
+		// what the doc comment above FindingFilename promises.
+		{name: "plain", in: db.DBFinding{ID: 3, Severity: "high", Name: "a b"}, exact: "high_a_b_#3.md"},
+		{name: "path traversal", in: db.DBFinding{ID: 4, Severity: "critical", Name: "../../etc/passwd"}, exact: "critical_.._.._etc_passwd_#4.md"},
+		{name: "defaults", in: db.DBFinding{ID: 0}, exact: "info_未分类_#0.md"},
 	}
 	for _, c := range cases {
 		in := c.in
@@ -305,5 +305,65 @@ func TestFindingsCSVEmptySet(t *testing.T) {
 	}
 	if len(rows) != 1 {
 		t.Fatalf("expected header only, got %v", rows)
+	}
+}
+
+func TestFindingsMarkdownSeverityBucketsMatchTotal(t *testing.T) {
+	mk := func(id int64, sev string) *db.DBFinding {
+		return &db.DBFinding{ID: id, Severity: sev, CreatedAt: exportAt}
+	}
+	out := FindingsMarkdown([]*db.DBFinding{
+		mk(1, "critical"),
+		mk(2, "INFO"),     // case-insensitive
+		mk(3, ""),         // blank folds onto the info bucket
+		mk(4, "  high  "), // trimmed
+		mk(5, "hihg"),     // typo → 未分级
+	}, exportAt)
+
+	want := "| 严重 | 1 |\n| 高危 | 1 |\n| 中危 | 0 |\n| 低危 | 0 |\n| 信息 | 2 |\n| 未分级 | 1 |\n"
+	if !strings.Contains(out, want) {
+		t.Fatalf("summary table mismatch:/n%s", out)
+	}
+	// The table must account for every finding in the header total.
+	if !strings.Contains(out, "- **发现总数**：5 个") {
+		t.Fatalf("total missing:/n%s", out)
+	}
+	// Normalised labels: padding/case never leak into the heading.
+	if !strings.Contains(out, "### 2. [HIGH] ") {
+		t.Fatalf("padded severity not normalised:/n%s", out)
+	}
+
+	// 未分级 disappears once every finding lands in a known bucket.
+	clean := FindingsMarkdown([]*db.DBFinding{mk(1, "critical"), mk(2, ""), mk(3, "info")}, exportAt)
+	if strings.Contains(clean, "未分级") {
+		t.Fatalf("leftover row rendered for a fully-classified set:/n%s", clean)
+	}
+	if !strings.Contains(clean, "| 信息 | 2 |\n") {
+		t.Fatalf("blank severity not counted as info:/n%s", clean)
+	}
+}
+
+func TestSortFindingsForExportNormalisesSeverity(t *testing.T) {
+	items := []*db.DBFinding{
+		{ID: 1, Severity: "hihg", CreatedAt: exportAt},   // unknown → last
+		{ID: 2, Severity: "INFO", CreatedAt: exportAt},   // known, lowest bucket
+		{ID: 3, Severity: " High ", CreatedAt: exportAt}, // normalises onto high
+		{ID: 4, Severity: "critical", CreatedAt: exportAt},
+	}
+	sortFindingsForExport(items)
+	for i, want := range []int64{4, 3, 2, 1} {
+		if items[i].ID != want {
+			t.Fatalf("position %d: got %d want %d (%v)", i, items[i].ID, want, idsOf(items))
+		}
+	}
+}
+
+func TestFindingFilenameKeepList(t *testing.T) {
+	// `#` is kept (the `#id` suffix is part of the documented shape); the other
+	// characters a title may legitimately contain get folded to one underscore.
+	f := &db.DBFinding{ID: 5, Severity: "high", Name: "a?b*c:d\"e<f>g|h#i", VulnClass: "sqli"}
+	got := FindingFilename(f)
+	if got != "high_a_b_c_d_e_f_g_h#i_#5.md" {
+		t.Fatalf("filename=%q", got)
 	}
 }

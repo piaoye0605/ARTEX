@@ -43,7 +43,37 @@ func parseFinding(n *db.Node) findingView {
 	return findingView{p.VulnClass, p.Name, p.Severity, p.Summary, p.Evidence.PoC}
 }
 
-var sevRank = map[string]int{"critical": 0, "high": 1, "medium": 2, "low": 3, "": 4}
+// sevRank orders the known severities from most to least severe. `info` is the
+// lowest named bucket; a blank severity renders as INFO too, so it ranks there.
+var sevRank = map[string]int{"critical": 0, "high": 1, "medium": 2, "low": 3, "info": 4}
+
+// sevUnknown is the rank for any severity outside sevRank. It sits below info on
+// purpose: a typo ("hihg") must never outrank a real critical just because the map
+// lookup missed.
+const sevUnknown = 5
+
+// severityKey normalises a severity for counting: trimmed + lowercased, with a blank
+// value folded onto "info" (the label the detail sections render for it).
+func severityKey(s string) string {
+	s = strings.ToLower(strings.TrimSpace(s))
+	if s == "" {
+		return "info"
+	}
+	return s
+}
+
+// severityRank returns the sort rank of a severity, using severityKey's normalisation.
+func severityRank(s string) int {
+	k := severityKey(s)
+	if r, ok := sevRank[k]; ok {
+		return r
+	}
+	return sevUnknown
+}
+
+// severityLabel renders a severity for headings/sections: normalised and uppercased,
+// so " high " and "HIGH" both print [HIGH] and a blank prints [INFO].
+func severityLabel(s string) string { return strings.ToUpper(severityKey(s)) }
 
 // Markdown renders the report.
 func Markdown(in Input) string {
@@ -78,9 +108,9 @@ func Markdown(in Input) string {
 		for _, n := range in.Findings {
 			fs = append(fs, parseFinding(n))
 		}
-		sort.SliceStable(fs, func(i, j int) bool { return sevRank[fs[i].Severity] < sevRank[fs[j].Severity] })
+		sort.SliceStable(fs, func(i, j int) bool { return severityRank(fs[i].Severity) < severityRank(fs[j].Severity) })
 		for i, f := range fs {
-			fmt.Fprintf(&b, "### %d. [%s] %s\n\n", i+1, strings.ToUpper(nz(f.Severity, "info")), nz(f.Name, nz(f.VulnClass, "未分类")))
+			fmt.Fprintf(&b, "### %d. [%s] %s\n\n", i+1, severityLabel(f.Severity), nz(f.Name, nz(f.VulnClass, "未分类")))
 			fmt.Fprintf(&b, "%s\n\n", nz(f.Summary, ""))
 			if f.PoC != "" {
 				fmt.Fprintf(&b, "**PoC / 证据：**\n\n```\n%s\n```\n\n", f.PoC)

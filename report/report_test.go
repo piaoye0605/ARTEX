@@ -44,8 +44,8 @@ func TestMarkdownRendersOrderedFindings(t *testing.T) {
 		t.Fatalf("header mismatch:\n--- got ---\n%q\n--- want ---\n%q", out, wantHeader)
 	}
 
-	// Severity order is sevRank (critical→high→medium→low→""); a payload without
-	// severity ranks as "" (least severe, after low) and falls back to the INFO label.
+	// Severity order is severityRank (critical→high→medium→low→info); a payload
+	// without severity sorts with info and falls back to the INFO label.
 	crit := strings.Index(out, "### 1. [CRITICAL] SQL 注入")
 	low := strings.Index(out, "### 2. [LOW] 反射型 XSS")
 	info := strings.Index(out, "### 3. [INFO] 无等级发现")
@@ -125,5 +125,63 @@ func TestNZTrimSemantics(t *testing.T) {
 		if got := nz(c.in, c.def); got != c.want {
 			t.Fatalf("nz(%q)=%q want %q", c.in, got, c.want)
 		}
+	}
+}
+
+func TestSeverityNormalisation(t *testing.T) {
+	// Counting/labelling key: trimmed + lowercased, blank folded onto info.
+	cases := []struct{ in, key string }{
+		{"critical", "critical"},
+		{"  HIGH ", "high"},
+		{"Info", "info"},
+		{"", "info"},
+		{"   ", "info"},
+		{"weird", "weird"},
+	}
+	for _, c := range cases {
+		if got := severityKey(c.in); got != c.key {
+			t.Fatalf("severityKey(%q)=%q want %q", c.in, got, c.key)
+		}
+	}
+
+	// Rank: strictly increasing down the ladder, and any unknown value lands below
+	// info — a typo must never outrank a real critical.
+	if !(severityRank("critical") < severityRank("high") &&
+		severityRank("high") < severityRank("medium") &&
+		severityRank("medium") < severityRank("low") &&
+		severityRank("low") < severityRank("info")) {
+		t.Fatal("severity ladder out of order")
+	}
+	if severityRank("") != severityRank("info") || severityRank("  INFO  ") != severityRank("info") {
+		t.Fatal("blank/cased severity did not normalise onto info")
+	}
+	if got := severityRank("weird"); got != sevUnknown {
+		t.Fatalf("unknown severity rank=%d want %d", got, sevUnknown)
+	}
+	if severityRank("weird") <= severityRank("info") {
+		t.Fatal("unknown severity outranks info")
+	}
+
+	// Label: normalised and uppercased, never empty.
+	if got := severityLabel("  high "); got != "HIGH" {
+		t.Fatalf("severityLabel=%q", got)
+	}
+	if got := severityLabel(""); got != "INFO" {
+		t.Fatalf("blank label=%q", got)
+	}
+}
+
+func TestMarkdownUnknownSeverityRanksLast(t *testing.T) {
+	out := Markdown(Input{
+		GeneratedAt: reportAt,
+		Findings: []*db.Node{
+			findingNode(`{"name":"拼写错误","severity":"hihg"}`),
+			findingNode(`{"name":"信息级","severity":"info"}`),
+		},
+	})
+	// A misspelt severity is rendered verbatim but sorted after every known bucket.
+	weird := strings.Index(out, "### 2. [HIHG] 拼写错误")
+	if weird < 0 || strings.Index(out, "### 1. [INFO] 信息级") < 0 {
+		t.Fatalf("unknown severity order wrong:/n%s", out)
 	}
 }

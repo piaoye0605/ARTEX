@@ -19,9 +19,9 @@ import (
 // sortFindingsForExport 按严重等级降序、再按时间倒序排,与汇总报告的分组一致。
 func sortFindingsForExport(fs []*db.DBFinding) {
 	sort.SliceStable(fs, func(i, j int) bool {
-		ri, rj := sevRank[fs[i].Severity], sevRank[fs[j].Severity]
+		ri, rj := severityRank(fs[i].Severity), severityRank(fs[j].Severity)
 		if ri != rj {
-			return ri < rj // sevRank 越小越严重
+			return ri < rj // severityRank 越小越严重
 		}
 		return fs[i].CreatedAt.After(fs[j].CreatedAt)
 	})
@@ -43,17 +43,23 @@ func FindingsMarkdown(fs []*db.DBFinding, generatedAt time.Time) string {
 	fmt.Fprintf(&b, "- **生成时间**：%s\n", generatedAt.Format("2006-01-02 15:04:05"))
 	fmt.Fprintf(&b, "- **发现总数**：%d 个\n\n", len(items))
 
-	// 摘要:各严重等级计数。
+	// 摘要:各严重等级计数。空等级折算为 info(与明细区渲染的 [INFO] 一致);
+	// 五档之外的取值单独算「未分级」,保证表格合计与上面的发现总数相符。
 	counts := map[string]int{}
 	for _, f := range items {
-		counts[f.Severity]++
+		counts[severityKey(f.Severity)]++
 	}
 	b.WriteString("## 摘要\n\n")
 	b.WriteString("| 严重等级 | 数量 |\n| --- | --- |\n")
+	known := 0
 	for _, s := range []struct{ key, label string }{
-		{"critical", "严重"}, {"high", "高危"}, {"medium", "中危"}, {"low", "低危"},
+		{"critical", "严重"}, {"high", "高危"}, {"medium", "中危"}, {"low", "低危"}, {"info", "信息"},
 	} {
 		fmt.Fprintf(&b, "| %s | %d |\n", s.label, counts[s.key])
+		known += counts[s.key]
+	}
+	if rest := len(items) - known; rest > 0 {
+		fmt.Fprintf(&b, "| 未分级 | %d |\n", rest)
 	}
 	b.WriteString("\n")
 
@@ -64,7 +70,7 @@ func FindingsMarkdown(fs []*db.DBFinding, generatedAt time.Time) string {
 
 	b.WriteString("## 漏洞明细\n\n")
 	for i, f := range items {
-		fmt.Fprintf(&b, "### %d. [%s] %s\n\n", i+1, strings.ToUpper(nz(f.Severity, "info")), findingTitle(f))
+		fmt.Fprintf(&b, "### %d. [%s] %s\n\n", i+1, severityLabel(f.Severity), findingTitle(f))
 		if f.VulnClass != "" {
 			fmt.Fprintf(&b, "- **类别**：%s\n", f.VulnClass)
 		}
@@ -93,11 +99,11 @@ func FindingsMarkdown(fs []*db.DBFinding, generatedAt time.Time) string {
 // SingleFindingMarkdown 渲染单条漏洞为一份独立 Markdown(用于「一漏洞一文件」打包)。
 func SingleFindingMarkdown(f *db.DBFinding, generatedAt time.Time) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "# [%s] %s\n\n", strings.ToUpper(nz(f.Severity, "info")), findingTitle(f))
+	fmt.Fprintf(&b, "# [%s] %s\n\n", severityLabel(f.Severity), findingTitle(f))
 	if f.VulnClass != "" {
 		fmt.Fprintf(&b, "- **类别**：%s\n", f.VulnClass)
 	}
-	fmt.Fprintf(&b, "- **严重等级**：%s\n", nz(f.Severity, "info"))
+	fmt.Fprintf(&b, "- **严重等级**：%s\n", severityKey(f.Severity))
 	fmt.Fprintf(&b, "- **状态**：%s\n", nz(f.Status, "pending"))
 	if desc := strings.TrimSpace(f.TaskDescription); desc != "" {
 		fmt.Fprintf(&b, "- **所属任务**：%s\n", desc)
@@ -119,7 +125,9 @@ func SingleFindingMarkdown(f *db.DBFinding, generatedAt time.Time) string {
 	return b.String()
 }
 
-var unsafeFilenameChars = regexp.MustCompile(`[^\p{Han}\p{L}\p{N}._-]+`)
+// unsafeFilenameChars 把不能出现在文件名里的字符折叠成下划线。白名单保留 `#`,
+// 好让 `#id` 后缀原样留下(见 FindingFilename 的示例)。
+var unsafeFilenameChars = regexp.MustCompile(`[^\p{Han}\p{L}\p{N}._#-]+`)
 
 // FindingFilename 为「一漏洞一文件」生成安全的 .md 文件名,形如
 // `critical_SQL注入_#123.md`。去掉路径分隔符与控制字符,避免 zip 内非法路径。
@@ -155,7 +163,7 @@ func FindingsCSV(fs []*db.DBFinding) []byte {
 			fmt.Sprintf("%d", f.ID),
 			findingTitle(f),
 			f.VulnClass,
-			nz(f.Severity, "info"),
+			severityKey(f.Severity),
 			nz(f.Status, "pending"),
 			f.TaskDescription,
 			f.CreatedAt.Format("2006-01-02 15:04:05"),
