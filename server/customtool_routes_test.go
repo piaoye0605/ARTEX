@@ -140,8 +140,10 @@ func TestCustomToolTestRoute(t *testing.T) {
 	}
 
 	// command with a real command: the shared bash floor runs PowerShell on
-	// Windows, so a PowerShell echo round-trips end to end.
-	cmd := fmt.Sprintf(`Write-Output probe-%d`, time.Now().UnixNano())
+	// Windows and a POSIX shell elsewhere. `echo` exists in all three (it is a
+	// PowerShell alias for Write-Output), so the case is host-agnostic — a cmdlet
+	// like `Write-Output` would fail with exit 127 under bash.
+	cmd := fmt.Sprintf(`echo probe-%d`, time.Now().UnixNano())
 	rec = crudDo(t, s, http.MethodPost, test, `{"kind":"command","exec":{"command":"`+cmd+`"}}`)
 	crudJSON(t, rec, &resp)
 	if resp.IsError || !strings.Contains(resp.Output, "probe-") {
