@@ -23,7 +23,7 @@
 1. **存储边界**：业务数据**只走 PostgreSQL**（`db/` 用 pgx）。`modernc.org/sqlite` 仅用于 `traffic/` 的本地检索索引，**禁止在 `db/` 引入 sqlite 分支或双方言抽象**。
 2. **SQL 方言**：允许 PG 特性（`ILIKE`、`ON CONFLICT`、`RETURNING`、`JSONB`、`$1` 占位符）。新增 SQL 必须用参数化，不得字符串拼接用户输入。
 3. **迁移**：新增表/列必须**幂等 + 可回滚**，改动后跑 `go test ./db/...`。
-4. **测试**：现有 153 个测试文件**禁止删除、跳过或注释掉**。`enrich/` 与 `report/` 目前**零测试**，改动这两个包必须同步补测试。
+4. **测试**：测试文件**禁止删除、跳过或注释掉**（`t.Skip` 只允许用于环境缺失的显式分支）。`enrich/` 与 `report/` 的覆盖仍低于其他包，改动这两个包必须同步补测试。覆盖率门禁见 §4 的 `./cov.sh`。
 5. **前端**：包管理器用 **npm**；lint/format 唯一工具是 **Biome**（`npm run check`），**禁止引入 ESLint / Prettier**；页面放在 `web/src/app/` 的 App Router 路由组下。
 6. **端口**：`8787` 前端 + API + SSE（全网卡）；`8788` MITM 代理**仅绑 `127.0.0.1`**，不得改成 `0.0.0.0`。
 7. **刻意设计不要"顺手修复"**：`enrich.Engine` 的 `InsecureSkipVerify: true`、MITM 证书、`traffic/` 的 sqlite 高水位保留等，都是渗透测试场景的刻意选择，改动前必须先说明理由并取得确认。
@@ -47,9 +47,12 @@ gofmt -l .                 # 应无输出
 go build ./...             # 编译通过
 go vet ./...               # 静态检查
 go test ./...              # 全部测试通过（重构安全网）
+./cov.sh                   # 覆盖率门禁（默认 73%，与 CI 同款）
 cd web && npm run check    # Biome 检查
 cd web && npm run build    # 前端构建
 ```
+
+覆盖率门禁由 `tools/covgate` 执行：按包统计语句覆盖、列出最差的几个包，总覆盖或指定包低于阈值即失败。CI（`.github/workflows/nightly-regression.yml`）每天跑一次，阈值与本地脚本一致；调阈值时两处一起改。
 
 ## 5. 与智能体协作的方式
 

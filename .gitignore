@@ -64,3 +64,6 @@ Thumbs.db
 
 # local postgres data dir used for contract tests
 /.pgtest/
+
+# 覆盖率产物（./cov.sh 生成）
+/cover*.out
