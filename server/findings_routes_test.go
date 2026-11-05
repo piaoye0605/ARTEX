@@ -53,8 +53,8 @@ func newFindingFixture(t *testing.T, m *Manager, tag string, withNode bool) find
 			t.Fatalf("add goal: %v", err)
 		}
 		nodeID, err = task.Store.AddNode(db.KindFinding, map[string]any{
-			"summary":  "sql injection in login",
-			"severity": db.SeverityHigh,
+			"summary":   "sql injection in login",
+			"severity":  db.SeverityHigh,
 			"vulnclass": fx.marker,
 		}, 5, "confirmed", "worker", nil)
 		if err != nil {

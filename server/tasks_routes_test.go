@@ -564,10 +564,10 @@ func TestUpdateTaskLLMProfilesRoute(t *testing.T) {
 
 func TestParseTargetHelpers(t *testing.T) {
 	cases := []struct {
-		text              string
-		scheme, host      string
-		port              int
-		ok                bool
+		text         string
+		scheme, host string
+		port         int
+		ok           bool
 	}{
 		{"visit http://10.1.2.3:8080/admin now", "http", "10.1.2.3", 8080, true},
 		{"https://secure.example.com/login", "https", "secure.example.com", 443, true},
@@ -673,7 +673,7 @@ func TestTaskCoverageAndScopeRoutes(t *testing.T) {
 	}
 
 	var cov struct {
-		Enabled bool               `json:"enabled"`
+		Enabled bool                `json:"enabled"`
 		ByType  []db.CoverageByType `json:"by_type"`
 	}
 	rec := crudDo(t, s, http.MethodGet, "/api/tasks/"+created+"/coverage", "")

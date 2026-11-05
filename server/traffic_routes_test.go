@@ -76,10 +76,10 @@ VALUES(?,?,?,?,?)`, id, "GET "+url+" HTTP/1.1\r\nHost: "+host+"\r\n\r\n", []byte
 		Count     int    `json:"count"`
 		Total     int    `json:"total"`
 		Exchanges []struct {
-			ID      string `json:"id"`
-			Host    string `json:"host"`
-			Status  int    `json:"status"`
-			TS      string `json:"ts"`
+			ID     string `json:"id"`
+			Host   string `json:"host"`
+			Status int    `json:"status"`
+			TS     string `json:"ts"`
 		} `json:"exchanges"`
 	}
 	crudJSON(t, rec, &page)
@@ -162,7 +162,7 @@ VALUES(?,?,?,?,?)`, id, "GET "+url+" HTTP/1.1\r\nHost: "+host+"\r\n\r\n", []byte
 	if rec := crudDo(t, s, http.MethodGet, "/api/traffic/blob?hash=deadbeef", ""); rec.Code != http.StatusNotFound {
 		t.Fatalf("blob bad hash: status=%d", rec.Code)
 	}
-	if rec := crudDo(t, s, http.MethodGet, "/api/traffic/blob?hash=" + hash, ""); rec.Code != http.StatusOK {
+	if rec := crudDo(t, s, http.MethodGet, "/api/traffic/blob?hash="+hash, ""); rec.Code != http.StatusOK {
 		t.Fatalf("blob uppercase-hash path: status=%d", rec.Code)
 	}
 

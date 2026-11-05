@@ -328,8 +328,8 @@ func TestChatUploadPureHelpers(t *testing.T) {
 		t.Fatalf("activity=%+v", a)
 	}
 	var detail struct {
-		Text        string              `json:"text"`
-		Attachments []chatAttachment    `json:"attachments"`
+		Text        string           `json:"text"`
+		Attachments []chatAttachment `json:"attachments"`
 	}
 	if err := json.Unmarshal([]byte(a.Detail), &detail); err != nil || detail.Text != "正文" || len(detail.Attachments) != 1 {
 		t.Fatalf("detail=%q err=%v", a.Detail, err)

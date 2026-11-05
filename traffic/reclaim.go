@@ -12,7 +12,6 @@ import (
 	"sort"
 	"strings"
 	"time"
-
 )
 
 // indexBytes is the index's real footprint on disk: the database plus its

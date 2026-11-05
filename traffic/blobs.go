@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
-
 )
 
 var blobHashRe = regexp.MustCompile(`^[0-9a-f]{64}$`)

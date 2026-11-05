@@ -11,7 +11,6 @@ import (
 	"strconv"
 	"strings"
 	"unicode/utf8"
-
 )
 
 // ExchangeMeta is one row of the index (returned by Search).

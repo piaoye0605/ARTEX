@@ -10,7 +10,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-
 )
 
 // DeleteHost removes every recorded exchange whose host contains the given
