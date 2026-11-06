@@ -50,6 +50,10 @@ func main() {
 	os.Exit(run())
 }
 
+// restartRequested 是"请退出让守护脚本重启我"的信号，声明成变量只为让测试
+// 能在不真的升级的情况下走通退出码与优雅关闭路径。
+var restartRequested = server.RestartRequested
+
 func run() int {
 	var (
 		addr    = flag.String("addr", ":8787", "HTTP listen address")
@@ -133,7 +137,7 @@ func run() int {
 	code := 0
 	select {
 	case <-ctx.Done():
-	case <-server.RestartRequested():
+	case <-restartRequested():
 		code = selfupdate.ExitRestart
 		shutdown(agent.AbortShutdown)
 	}

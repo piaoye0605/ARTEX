@@ -25,13 +25,49 @@ func testPaths(t *testing.T) Paths {
 	}
 }
 
-// fakeBin 写一个可执行的壳脚本冒充 artex。smokeTest 只是用 -h 拉起它看退出码，
-// 脚本完全够用，而且比编译一个真二进制快得多。
+// fakeBin 写一个可执行的"假 artex"。smokeTest 只是用 -h 拉起它看退出码，
+// 所以不需要真的编译一个二进制：
+//
+//   - Unix 上写一个 sh 壳脚本，几十字节、瞬时完成；
+//   - Windows 上 sh 跑不了（go test 在本机是主要开发回路），改为复制当前测试
+//     二进制并追加一段标记文本。追加的字节在 PE/ELF 的节表之外，加载器会忽略，
+//     而 `-h` 会让测试二进制的 flag 解析打印用法后以 0 退出——正好等价于
+//     "能执行且成功退出"。追加的标记让 readAll 断言仍然能区分 new/old。
 func fakeBin(t *testing.T, path, marker string, exitCode int) {
 	t.Helper()
+	if runtime.GOOS == "windows" {
+		fakeBinCopy(t, path, marker)
+		return
+	}
 	script := "#!/bin/sh\necho " + marker + "\nexit " + itoa(exitCode) + "\n"
 	if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
 		t.Fatalf("写入假二进制 %s: %v", path, err)
+	}
+}
+
+// fakeBinCopy 复制测试二进制充当可执行文件（见 fakeBin 的说明）。
+func fakeBinCopy(t *testing.T, path, marker string) {
+	t.Helper()
+	src, err := os.Executable()
+	if err != nil {
+		t.Fatalf("定位测试二进制: %v", err)
+	}
+	b, err := os.ReadFile(src)
+	if err != nil {
+		t.Fatalf("读取测试二进制: %v", err)
+	}
+	b = append(b, []byte("\n#"+marker+"\n")...)
+	if err := os.WriteFile(path, b, 0o755); err != nil {
+		t.Fatalf("写入假二进制 %s: %v", path, err)
+	}
+}
+
+// fakeUnrunnable 写一个存在、带执行位、但根本无法 exec 的文件，
+// 用来模拟"下载到损坏 / 架构选错的二进制"。
+func fakeUnrunnable(t *testing.T, path string) {
+	t.Helper()
+	if err := os.WriteFile(path, []byte("this is not an executable\n"), 0o755); err != nil {
+		t.Fatalf("写入坏二进制 %s: %v", path, err)
 	}
 }
 
@@ -62,13 +98,6 @@ func readAll(t *testing.T, path string) string {
 		t.Fatalf("读取 %s: %v", path, err)
 	}
 	return string(b)
-}
-
-func requireUnix(t *testing.T) {
-	t.Helper()
-	if runtime.GOOS == "windows" {
-		t.Skip("假二进制用的是 sh 脚本，Windows 上跑不了")
-	}
 }
 
 func TestCompareVersions(t *testing.T) {
@@ -124,7 +153,6 @@ func TestResolvePathsNaming(t *testing.T) {
 }
 
 func TestVerifyStagedRejectsTamperedBinary(t *testing.T) {
-	requireUnix(t)
 	p := testPaths(t)
 	stage(t, p, "new", 0)
 
@@ -136,9 +164,16 @@ func TestVerifyStagedRejectsTamperedBinary(t *testing.T) {
 }
 
 func TestVerifyStagedRejectsUnrunnableBinary(t *testing.T) {
-	requireUnix(t)
 	p := testPaths(t)
-	stage(t, p, "broken", 1) // 能执行但退出码非 0
+	// 损坏/架构选错的二进制：文件在、有执行位，但 exec 直接失败。
+	fakeUnrunnable(t, p.New)
+	sum, err := fileSHA256(p.New)
+	if err != nil {
+		t.Fatalf("计算校验和: %v", err)
+	}
+	if err := os.WriteFile(p.Sum, []byte(sum), 0o644); err != nil {
+		t.Fatalf("写入校验和: %v", err)
+	}
 
 	if err := verifyStaged(p); err == nil {
 		t.Fatal("期望冒烟测试失败被拒绝，却通过了")
@@ -146,7 +181,6 @@ func TestVerifyStagedRejectsUnrunnableBinary(t *testing.T) {
 }
 
 func TestApplyStagedHappyPath(t *testing.T) {
-	requireUnix(t)
 	p := testPaths(t)
 	fakeBin(t, p.Current, "old", 0)
 	stage(t, p, "new", 0)
@@ -180,7 +214,6 @@ func TestApplyStagedHappyPath(t *testing.T) {
 }
 
 func TestApplyStagedKeepsCurrentWhenVerifyFails(t *testing.T) {
-	requireUnix(t)
 	p := testPaths(t)
 	fakeBin(t, p.Current, "old", 0)
 	stage(t, p, "new", 0)
@@ -202,7 +235,6 @@ func TestApplyStagedKeepsCurrentWhenVerifyFails(t *testing.T) {
 }
 
 func TestSwapOverwritesPreviousBackup(t *testing.T) {
-	requireUnix(t)
 	p := testPaths(t)
 	fakeBin(t, p.Current, "v2", 0)
 	fakeBin(t, p.Old, "v1", 0) // 上一轮升级留下的备份
@@ -220,7 +252,6 @@ func TestSwapOverwritesPreviousBackup(t *testing.T) {
 }
 
 func TestConfirmCountsAttemptsThenRollsBack(t *testing.T) {
-	requireUnix(t)
 	p := testPaths(t)
 	fakeBin(t, p.Current, "broken-new", 0)
 	fakeBin(t, p.Old, "good-old", 0)
@@ -263,7 +294,6 @@ func TestConfirmCountsAttemptsThenRollsBack(t *testing.T) {
 }
 
 func TestManualRollbackIsReversible(t *testing.T) {
-	requireUnix(t)
 	p := testPaths(t)
 	fakeBin(t, p.Current, "v2", 0)
 	fakeBin(t, p.Old, "v1", 0)
@@ -425,7 +455,6 @@ func mustParse(t *testing.T, raw string) *url.URL {
 }
 
 func TestSettleClearsMarkerAndStopsRollback(t *testing.T) {
-	requireUnix(t)
 	p := testPaths(t)
 	fakeBin(t, p.Current, "new", 0)
 	fakeBin(t, p.Old, "old", 0)
@@ -449,7 +478,6 @@ func TestSettleClearsMarkerAndStopsRollback(t *testing.T) {
 }
 
 func TestSettleIsNoopWithoutMarker(t *testing.T) {
-	requireUnix(t)
 	p := testPaths(t)
 	fakeBin(t, p.Current, "cur", 0)
 	settle(p) // 普通启动路径，不该 panic 也不该动任何文件

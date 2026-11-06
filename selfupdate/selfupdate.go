@@ -49,6 +49,13 @@ type Paths struct {
 	Marker  string // 升级状态标记            artex.upgrade.json
 }
 
+// resolvePaths 是 ResolvePaths 的注入点，仅测试使用。
+//
+// 生产代码里所有"我要操作自己旁边那几个文件"的地方都走它，测试替成临时目录后
+// 就能把换装、回滚、暂存这些破坏性流程完整跑一遍，而不会真的动到 go test 的
+// 可执行文件。
+var resolvePaths = ResolvePaths
+
 // ResolvePaths 按当前可执行文件推导全部升级路径。
 //
 // Windows 上 .new/.old 也必须带 .exe 后缀，否则冒烟测试和换装后的执行都会失败，

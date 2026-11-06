@@ -15,7 +15,9 @@ import (
 const Repo = "Autumn-27/artex"
 
 // latestURL 是 GitHub 的"最新正式版"接口。它会自动跳过 prerelease 和 draft。
-const latestURL = "https://api.github.com/repos/" + Repo + "/releases/latest"
+//
+// 声明成变量只为测试能指向本地 TLS 服务；生产代码只读不写。
+var latestURL = "https://api.github.com/repos/" + Repo + "/releases/latest"
 
 // allowedHosts 限定升级链路能访问的域名。配合下面的 checkRedirect，
 // 任何一跳被重定向到名单外的主机都会直接失败——这是防止 DNS 污染 / 中间人

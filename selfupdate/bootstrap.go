@@ -51,7 +51,7 @@ func Bootstrap() (Action, State) {
 	if os.Getenv(smokeEnv) != "" {
 		return Continue, State{}
 	}
-	p, err := ResolvePaths()
+	p, err := resolvePaths()
 	if err != nil {
 		log.Printf("[update] 跳过自举：%v", err)
 		return Continue, State{}
@@ -135,7 +135,7 @@ func confirmOrRollback(p Paths, m marker) (Action, State) {
 // 由 main 在 HTTP 监听起来之后延迟调用：活过这段时间才算数，否则标记留在原地，
 // 下次启动继续累计尝试次数，直到触发回滚。
 func Settle() {
-	p, err := ResolvePaths()
+	p, err := resolvePaths()
 	if err != nil {
 		return
 	}
@@ -240,7 +240,7 @@ func rollback(p Paths) error {
 // Rollback 是 /api/update/rollback 的实现：主动退回上一版本。
 // 只做换装，重启同样交给守护脚本（调用方随后以 ExitRestart 退出）。
 func Rollback() error {
-	p, err := ResolvePaths()
+	p, err := resolvePaths()
 	if err != nil {
 		return err
 	}
@@ -270,7 +270,7 @@ func Rollback() error {
 
 // HasBackup 报告是否存在可回滚的上一版本，供前端决定要不要显示回滚按钮。
 func HasBackup() bool {
-	p, err := ResolvePaths()
+	p, err := resolvePaths()
 	if err != nil {
 		return false
 	}

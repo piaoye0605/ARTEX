@@ -48,7 +48,7 @@ func Stage(ctx context.Context, c *http.Client, rel *Release, currentVersion str
 	if prog == nil {
 		prog = func(Phase, int, string) {}
 	}
-	p, err := ResolvePaths()
+	p, err := resolvePaths()
 	if err != nil {
 		return err
 	}
@@ -320,6 +320,7 @@ func (w *progressWriter) Write(b []byte) (int, error) {
 
 func humanSize(n int64) string {
 	const unit = 1024
+	const units = "KMGT"
 	if n < unit {
 		return fmt.Sprintf("%d B", n)
 	}
@@ -328,7 +329,13 @@ func humanSize(n int64) string {
 		div *= unit
 		exp++
 	}
-	return fmt.Sprintf("%.1f %cB", float64(n)/float64(div), "KMGT"[exp])
+	// 单位表到 TB 为止。Asset.Size 来自远端，理论上可以是任意 int64，
+	// 不夹住就越界 panic——宁可显示成 "1024.0 TB" 也不能崩在进度回调里。
+	if exp >= len(units) {
+		exp = len(units) - 1
+		div = int64(unit) << (10 * exp)
+	}
+	return fmt.Sprintf("%.1f %cB", float64(n)/float64(div), units[exp])
 }
 
 func short(sum string) string {
