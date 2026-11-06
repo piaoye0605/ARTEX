@@ -186,6 +186,9 @@ func Redact(dsn string) string {
 	if u.User != nil {
 		if _, hasPw := u.User.Password(); hasPw {
 			u.User = url.UserPassword(u.User.Username(), "****")
+			// url.String 会把 userinfo 里的 * 转义成 %2A，日志里
+			// "u:%2A%2A%2A%2A@" 反而看不懂；还原成掩码本身。
+			return strings.Replace(u.String(), "%2A%2A%2A%2A", "****", 1)
 		}
 	}
 	return fmt.Sprintf("%s", u.String())
