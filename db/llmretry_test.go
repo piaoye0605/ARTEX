@@ -14,7 +14,9 @@ func TestProfileRetryRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Skipf("postgres unavailable (%v) — skipping", err)
 	}
-	defer d.Close()
+	// Close 交给 t.Cleanup 且最先注册（LIFO 最后执行）：行删除 cleanup 必须在池仍打开时运行，
+	// 否则静默失败留下残留行，下次运行撞唯一键。
+	t.Cleanup(func() { d.Close() })
 
 	want := RetryOverride{
 		Connect: RetryRule{Attempts: 5, IntervalMS: 2000},
@@ -71,7 +73,9 @@ func TestProfileRetryClampedOnSave(t *testing.T) {
 	if err != nil {
 		t.Skipf("postgres unavailable (%v) — skipping", err)
 	}
-	defer d.Close()
+	// Close 交给 t.Cleanup 且最先注册（LIFO 最后执行）：行删除 cleanup 必须在池仍打开时运行，
+	// 否则静默失败留下残留行，下次运行撞唯一键。
+	t.Cleanup(func() { d.Close() })
 
 	id, err := d.SaveProfile(&LLMProfile{
 		Name: "t-retry-clamp", Format: "openai", Model: "m", APIKey: "k",
@@ -97,7 +101,9 @@ func TestLLMRetryPolicyRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Skipf("postgres unavailable (%v) — skipping", err)
 	}
-	defer d.Close()
+	// Close 交给 t.Cleanup 且最先注册（LIFO 最后执行）：行删除 cleanup 必须在池仍打开时运行，
+	// 否则静默失败留下残留行，下次运行撞唯一键。
+	t.Cleanup(func() { d.Close() })
 
 	before, hadBefore, err := d.GetSetting(settingLLMRetryPolicy)
 	if err != nil {

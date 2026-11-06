@@ -200,13 +200,22 @@ func TestToolSpawnTaskValidation(t *testing.T) {
 		t.Fatalf("over cap: err=%v out=%s", isErr, out)
 	}
 
-	// Duplicate / invalid / unknown source ids.
+	// Duplicate / invalid / unknown source ids. Existence is checked before
+	// the duplicate mark is set (orchestration.go), so the duplicate case
+	// must reference a real task id — otherwise a clean database rejects it
+	// with "不存在" first.
+	realSource, err := m.CreateTask("spawn-validation source", "goal", nil, 0, 0)
+	if err != nil {
+		t.Fatalf("create real source: %v", err)
+	}
+	t.Cleanup(func() { _, _ = m.DeleteTask(realSource.ID, DeleteTaskOptions{}) })
+	realID := fmt.Sprint(realSource.ID)
 	for _, tc := range []struct {
 		name string
 		ids  []string
 		want string
 	}{
-		{"duplicate", []string{"1", "1"}, "关联任务 id 无效或重复"},
+		{"duplicate", []string{realID, realID}, "关联任务 id 无效或重复"},
 		{"non-numeric", []string{"abc"}, "关联任务 id 无效或重复"},
 		{"non-positive", []string{"0"}, "关联任务 id 无效或重复"},
 	} {
