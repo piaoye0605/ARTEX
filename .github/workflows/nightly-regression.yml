@@ -31,7 +31,10 @@ jobs:
       - name: vet
         run: go vet ./...
       - name: test
-        run: go test ./... -count=1 -coverprofile=cover.out
+        # 显式超时：go test 默认按包 10 分钟，server 包已接近这个量级（PG 集成用例
+        # 上千条），一旦 runner 稍慢就会把「跑得慢」误判成「测试挂死」，连带让
+        # 覆盖率 profile 残缺、门禁读到一个偏低的数字。
+        run: go test ./... -count=1 -timeout 30m -coverprofile=cover.out
       - name: 覆盖率门禁
         if: always() && hashFiles('cover.out') != ''
         run: ARTEX_COV_SUMMARY="$GITHUB_STEP_SUMMARY" bash ./cov.sh -r -o cover.out
